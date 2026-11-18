@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cheque Management Tracker (QAR) — Multi-Villa System</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; color: #0f172a; }
+    .tab-btn-active { background-color: #1e293b; color: #ffffff; box-shadow: 0 4px 10px rgba(15, 23, 42, 0.2); }
+    .due-soon-row { background-color: #fef08a !important; } /* হুবহু শিটের মতো হলুদ হাইলাইট */
+    .loader { border: 3px solid #cbd5e1; border-top: 3px solid #2563eb; border-radius: 50%; width: 20px; height: 20px; animation: spin 0.7s linear infinite; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- TOP HEADER -->
+  <header class="bg-slate-900 text-white sticky top-0 z-40 shadow-lg">
+    <div class="max-w-7xl mx-auto px-4 py-3.5 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="bg-blue-600 w-10 h-10 rounded-xl flex items-center justify-center shadow">
+          <i class="fa-solid fa-money-check-dollar text-lg"></i>
+        </div>
+        <div>
+          <h1 class="text-base sm:text-lg font-extrabold tracking-tight">Cheque Management Tracker (QAR)</h1>
+          <p class="text-xs text-slate-400">Multi-Villa Sheet Sync • CBQ / QNB / QIB Balance Control</p>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <button onclick="loadSheetData()" class="bg-slate-800 hover:bg-slate-700 text-xs font-semibold px-3.5 py-2 rounded-xl border border-slate-700 flex items-center gap-1.5 transition">
+          <i class="fa-solid fa-rotate"></i> Sync Sheet
+        </button>
+        <button onclick="openNewVillaModal()" class="bg-emerald-600 hover:bg-emerald-500 text-xs font-bold px-3.5 py-2 rounded-xl shadow flex items-center gap-1.5 transition">
+          <i class="fa-solid fa-folder-plus"></i> + New Villa Tab
+        </button>
+        <button onclick="openAddChequesModal()" class="bg-blue-600 hover:bg-blue-500 text-xs font-bold px-4 py-2 rounded-xl shadow flex items-center gap-1.5 transition">
+          <i class="fa-solid fa-plus"></i> + Add Cheques
+        </button>
+      </div>
+    </div>
+
+    <!-- NAVIGATION TABS -->
+    <div class="bg-white border-b border-slate-200 text-slate-600">
+      <div class="max-w-7xl mx-auto px-4 py-2 flex items-center gap-2 overflow-x-auto">
+        <button onclick="switchMainView('dashboard')" id="btn-view-dashboard" class="tab-btn-active px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap transition">
+          <i class="fa-solid fa-chart-pie"></i> DASHBOARD
+        </button>
+        <button onclick="switchMainView('villas')" id="btn-view-villas" class="px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-100 flex items-center gap-2 whitespace-nowrap transition">
+          <i class="fa-solid fa-table-list"></i> VILLA SHEETS (<span id="totalVillasBadge">0</span>)
+        </button>
+        <button onclick="switchMainView('search')" id="btn-view-search" class="px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-100 flex items-center gap-2 whitespace-nowrap transition">
+          <i class="fa-solid fa-magnifying-glass"></i> SEARCH CHEQUE / DATE
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- SYNC LOADING BAR -->
+  <div id="syncBar" class="hidden bg-blue-600 text-white text-xs font-medium py-2 px-4 flex items-center justify-center gap-2">
+    <div class="loader border-white/30 border-t-white"></div>
+    <span>Google Sheet থেকে সব ভিলার ডাটা লোড হচ্ছে...</span>
+  </div>
+
+  <!-- MAIN WORKSPACE -->
+  <main class="max-w-7xl mx-auto w-full px-4 py-6 flex-1">
+
+    <!-- ==================== VIEW 1: DASHBOARD ==================== -->
+    <section id="view-dashboard" class="space-y-6">
+      
+      <!-- 3 Bank Liquidity Alert Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        
+        <!-- TODAY -->
+        <div class="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-rose-600">
+          <div class="flex justify-between items-start">
+            <div>
+              <span class="text-[11px] font-extrabold uppercase tracking-wider text-rose-700 bg-rose-50 px-2.5 py-1 rounded-lg">Today's Cheques</span>
+              <h2 id="kpiTodayAmount" class="text-2xl font-extrabold text-slate-900 mt-2">QAR 0.00</h2>
+              <p id="kpiTodayDate" class="text-xs text-slate-500 mt-0.5"></p>
+            </div>
+            <div class="bg-rose-100 text-rose-600 p-2.5 rounded-xl"><i class="fa-solid fa-bell"></i></div>
+          </div>
+          <div id="kpiTodayBanks" class="mt-4 pt-3 border-t border-slate-100 space-y-1.5 text-xs"></div>
+        </div>
+
+        <!-- TOMORROW -->
+        <div class="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-amber-500">
+          <div class="flex justify-between items-start">
+            <div>
+              <span class="text-[11px] font-extrabold uppercase tracking-wider text-amber-800 bg-amber-50 px-2.5 py-1 rounded-lg">Tomorrow (Keep Ready)</span>
+              <h2 id="kpiTomorrowAmount" class="text-2xl font-extrabold text-slate-900 mt-2">QAR 0.00</h2>
+              <p id="kpiTomorrowDate" class="text-xs text-slate-500 mt-0.5"></p>
+            </div>
+            <div class="bg-amber-100 text-amber-600 p-2.5 rounded-xl"><i class="fa-solid fa-vault"></i></div>
+          </div>
+          <div id="kpiTomorrowBanks" class="mt-4 pt-3 border-t border-slate-100 space-y-1.5 text-xs"></div>
+        </div>
+
+        <!-- NEXT 7 DAYS -->
+        <div class="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-blue-600">
+          <div class="flex justify-between items-start">
+            <div>
+              <span class="text-[11px] font-extrabold uppercase tracking-wider text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg">Next 7 Days Total</span>
+              <h2 id="kpi7DaysAmount" class="text-2xl font-extrabold text-slate-900 mt-2">QAR 0.00</h2>
+              <p id="kpi7DaysCount" class="text-xs text-slate-500 mt-0.5"></p>
+            </div>
+            <div class="bg-blue-100 text-blue-600 p-2.5 rounded-xl"><i class="fa-solid fa-calendar-week"></i></div>
+          </div>
+          <div id="kpi7DaysBanks" class="mt-4 pt-3 border-t border-slate-100 space-y-1.5 text-xs"></div>
+        </div>
+
+      </div>
+
+      <!-- Upcoming 7 Days Table -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-5 py-4 bg-slate-50 border-b border-slate-200 flex flex-wrap justify-between items-center gap-2">
+          <div>
+            <h3 class="font-extrabold text-slate-900 text-base">আগামী ৭ দিনের চেক তালিকা (Today + Next 7 Days)</h3>
+            <p class="text-xs text-slate-500">চেকের তারিখের আগে সংশ্লিষ্ট ব্যাংকে টাকা জমা রাখুন যাতে চেক বাউন্স না হয়</p>
+          </div>
+          <span id="upcomingCountPill" class="bg-slate-900 text-white text-xs font-bold px-3 py-1 rounded-full">0 Cheques</span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs sm:text-sm">
+            <thead>
+              <tr class="bg-slate-800 text-white text-[11px] uppercase">
+                <th class="py-3 px-4">Villa Tab</th>
+                <th class="py-3 px-4">Villa / Building No.</th>
+                <th class="py-3 px-4">Landlord / Payee</th>
+                <th class="py-3 px-4 text-center">Bank</th>
+                <th class="py-3 px-4 text-center">Cheque Date</th>
+                <th class="py-3 px-4 text-center">Cheque No.</th>
+                <th class="py-3 px-4 text-right">Amount (QAR)</th>
+                <th class="py-3 px-4 text-center">STATUS</th>
+              </tr>
+            </thead>
+            <tbody id="dashboardUpcomingBody" class="divide-y divide-slate-200"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ==================== VIEW 2: INDIVIDUAL VILLA SHEETS ==================== -->
+    <section id="view-villas" class="hidden space-y-5">
+      
+      <!-- Sheet Tab Bar (Bottom-style Sheet Switcher at Top) -->
+      <div class="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+        <div id="villaTabsBar" class="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0"></div>
+        <button onclick="openAddChequesForCurrentTab()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-1.5 shrink-0">
+          <i class="fa-solid fa-plus"></i> Add Cheques to <span id="currentTabBtnLabel">Villa</span>
+        </button>
+      </div>
+
+      <!-- Exact Replica of Reference Sheet Header & Table -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-300 overflow-hidden">
+        
+        <!-- Row 1 Banner Replica -->
+        <div class="grid grid-cols-1 md:grid-cols-9 border-b border-slate-300">
+          <div class="md:col-span-7 bg-[#CFE2F3] px-5 py-3.5 flex items-center justify-center">
+            <h2 class="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight">Cheque Management Tracker (QAR)</h2>
+          </div>
+          <div class="md:col-span-2 bg-[#FFF2CC] px-5 py-3.5 flex items-center justify-center border-t md:border-t-0 md:border-l border-slate-300">
+            <span id="sheetBannerVillaName" class="text-lg sm:text-xl font-extrabold text-slate-900">VILLA-68</span>
+          </div>
+        </div>
+
+        <!-- Row 3 Summary Bar Replica -->
+        <div class="bg-slate-50 px-5 py-3 border-b border-slate-300 flex flex-wrap items-center justify-between gap-4 text-xs sm:text-sm font-bold text-slate-800">
+          <div id="sheetSummaryNext" class="text-blue-700">Next: -</div>
+          <div class="flex flex-wrap items-center gap-5">
+            <span id="sheetSummaryCount" class="bg-slate-200 px-3 py-1 rounded-lg">Total Cheques: 0</span>
+            <span id="sheetSummaryTotal" class="text-slate-900">QAR 0.00</span>
+            <span id="sheetSummaryStatus" class="bg-emerald-100 text-emerald-800 px-3 py-1 rounded-lg">Done: 0 | Pending: 0</span>
+          </div>
+        </div>
+
+        <!-- Row 4 Table Replica -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs sm:text-sm">
+            <thead>
+              <tr class="bg-[#333F4F] text-white text-[11px] uppercase tracking-wider">
+                <th class="py-3 px-3 text-center border-r border-slate-600">SN NO</th>
+                <th class="py-3 px-3 border-r border-slate-600">Villa / Building No.</th>
+                <th class="py-3 px-3 border-r border-slate-600">Landlord / Payee Name</th>
+                <th class="py-3 px-3 text-center border-r border-slate-600">Bank</th>
+                <th class="py-3 px-3 text-center border-r border-slate-600">Cheque Date</th>
+                <th class="py-3 px-3 text-center border-r border-slate-600">Cheque No.</th>
+                <th class="py-3 px-3 text-right border-r border-slate-600">Monthly Rent (QAR)</th>
+                <th class="py-3 px-3 text-center border-r border-slate-600">STATUS</th>
+                <th class="py-3 px-3 border-r border-slate-600">NOTE</th>
+                <th class="py-3 px-3 text-center">Action</th>
+              </tr>
+            </thead>
+            <tbody id="villaSheetTableBody" class="divide-y divide-slate-200"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ==================== VIEW 3: SEARCH ==================== -->
+    <section id="view-search" class="hidden space-y-5">
+      <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div class="md:col-span-2">
+            <label class="block text-xs font-bold text-slate-700 mb-1">চেক নম্বর, প্রাপক (Payee), বা ভিলা দিয়ে খুঁজুন</label>
+            <input type="text" id="searchText" oninput="renderSearchView()" placeholder="যেমন: 0000541 বা DOHA BANK বা VILLA-68..." class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">তারিখ (Cheque Date)</label>
+            <input type="date" id="searchDate" onchange="renderSearchView()" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">ব্যাংক (Bank)</label>
+            <select id="searchBank" onchange="renderSearchView()" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm bg-white">
+              <option value="">All Banks</option>
+              <option value="CBQ">CBQ</option>
+              <option value="QNB">QNB</option>
+              <option value="QIB">QIB</option>
+              <option value="Doha Bank">Doha Bank</option>
+              <option value="Masraf Al Rayan">Masraf Al Rayan</option>
+              <option value="Dukhan Bank">Dukhan Bank</option>
+            </select>
+          </div>
+        </div>
+        <div class="mt-3 flex justify-between items-center text-xs text-slate-500">
+          <span id="searchStatsText" class="font-bold">0 results</span>
+          <button onclick="resetSearch()" class="text-blue-600 hover:underline font-bold">Reset Search</button>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs sm:text-sm">
+            <thead>
+              <tr class="bg-[#333F4F] text-white text-[11px] uppercase">
+                <th class="py-3 px-4">Cheque No.</th>
+                <th class="py-3 px-4">Cheque Date</th>
+                <th class="py-3 px-4">Villa Tab</th>
+                <th class="py-3 px-4">Villa / Building No.</th>
+                <th class="py-3 px-4">Landlord / Payee</th>
+                <th class="py-3 px-4 text-center">Bank</th>
+                <th class="py-3 px-4 text-right">Amount (QAR)</th>
+                <th class="py-3 px-4 text-center">STATUS</th>
+              </tr>
+            </thead>
+            <tbody id="searchTableBody" class="divide-y divide-slate-200"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ==================== MODAL 1: NEW VILLA SHEET TAB ==================== -->
+  <div id="modalNewVilla" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+      <div class="bg-emerald-700 text-white px-5 py-4 flex justify-between items-center">
+        <h3 class="font-bold text-sm"><i class="fa-solid fa-folder-plus mr-2"></i>নতুন ভিলা ট্যাব তৈরি করুন</h3>
+        <button onclick="closeModal('modalNewVilla')" class="text-emerald-200 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+      <div class="p-5 space-y-3.5">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Sheet Tab Name (যেমন: VILLA-25) *</label>
+          <input type="text" id="inputNewTabName" placeholder="VILLA-25" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm uppercase font-bold">
+          <p class="text-[11px] text-slate-400 mt-1">Google Sheet-এর নিচে এই নামে একটি নতুন ট্যাব তৈরি হবে।</p>
+        </div>
+        <button onclick="submitCreateVillaTab()" id="btnCreateTab" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-3 rounded-xl shadow">
+          Create Villa Sheet Tab
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL 2: MIXED BANK / DATE / AMOUNT CHEQUE BUILDER ==================== -->
+  <div id="modalAddCheques" class="hidden fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-6xl w-full overflow-hidden my-auto">
+      
+      <div class="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
+        <div>
+          <h3 class="font-extrabold text-base"><i class="fa-solid fa-money-check-dollar text-blue-400 mr-2"></i>নতুন চেক যোগ করুন (Mixed Bank, ভিন্ন তারিখ ও ভিন্ন অ্যামাউন্ট)</h3>
+          <p class="text-xs text-slate-400">প্রতিটি সারিতে আলাদা Bank (CBQ/QNB/QIB), আলাদা তারিখ এবং আলাদা টাকা বসাতে পারবেন</p>
+        </div>
+        <button onclick="closeModal('modalAddCheques')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+      </div>
+
+      <div class="p-5 space-y-4 max-h-[85vh] overflow-y-auto">
+        
+        <!-- Villa & Payee Defaults -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Select Villa Tab *</label>
+            <select id="formVillaTab" onchange="onFormTabChange()" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold bg-white"></select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Villa / Building No. *</label>
+            <input type="text" id="formVillaBuilding" placeholder="যেমন: DOHA BANK- Villa -68" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Landlord / Payee Name *</label>
+            <input type="text" id="formPayeeName" placeholder="যেমন: DOHA BANK" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+          </div>
+        </div>
+
+        <!-- Auto-Fill Helper -->
+        <details class="bg-blue-50 border border-blue-200 rounded-xl p-3">
+          <summary class="text-xs font-bold text-blue-800 cursor-pointer">
+            <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> ১-২ বছরের চেক এক ক্লিকে Auto-Fill করে পরে ব্যাংক/তারিখ/টাকা এডিট করতে এখানে ক্লিক করুন
+          </summary>
+          <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5 mt-3 pt-3 border-t border-blue-200">
+            <div>
+              <label class="block text-[11px] font-semibold mb-1">Default Bank</label>
+              <select id="autoBank" class="w-full border rounded-lg px-2 py-1.5 text-xs bg-white">
+                <option value="CBQ">CBQ</option>
+                <option value="QNB">QNB</option>
+                <option value="QIB">QIB</option>
+                <option value="Doha Bank">Doha Bank</option>
+                <option value="Masraf Al Rayan">Masraf Al Rayan</option>
+                <option value="Dukhan Bank">Dukhan Bank</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-[11px] font-semibold mb-1">Start Cheque No.</label>
+              <input type="number" id="autoStartNo" placeholder="540" class="w-full border rounded-lg px-2 py-1.5 text-xs bg-white">
+            </div>
+            <div>
+              <label class="block text-[11px] font-semibold mb-1">Start Date</label>
+              <input type="date" id="autoStartDate" class="w-full border rounded-lg px-2 py-1.5 text-xs bg-white">
+            </div>
+            <div>
+              <label class="block text-[11px] font-semibold mb-1">Amount (QAR)</label>
+              <input type="number" id="autoAmount" placeholder="10000" class="w-full border rounded-lg px-2 py-1.5 text-xs bg-white">
+            </div>
+            <div>
+              <label class="block text-[11px] font-semibold mb-1">Count</label>
+              <div class="flex gap-1">
+                <select id="autoCount" class="w-full border rounded-lg px-2 py-1.5 text-xs bg-white">
+                  <option value="6">6</option>
+                  <option value="12" selected>12 (1 Yr)</option>
+                  <option value="24">24 (2 Yrs)</option>
+                </select>
+                <button type="button" onclick="autoGenerateRows()" class="bg-blue-600 text-white text-xs font-bold px-3 rounded-lg">Fill</button>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <!-- Editable Rows -->
+        <div class="border border-slate-200 rounded-xl overflow-hidden">
+          <div class="bg-slate-100 px-4 py-2 flex justify-between items-center border-b">
+            <span class="text-xs font-bold text-slate-700">প্রতিটি সারির Bank, Cheque Date এবং Amount আলাদাভাবে সেট করুন</span>
+            <button type="button" onclick="addNewFormRow()" class="bg-slate-800 text-white text-xs font-bold px-3 py-1.5 rounded-lg">+ Add Row</button>
+          </div>
+          <div class="overflow-x-auto max-h-80">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-slate-50 text-slate-600 uppercase border-b sticky top-0">
+                <tr>
+                  <th class="py-2 px-3">#</th>
+                  <th class="py-2 px-3">Bank *</th>
+                  <th class="py-2 px-3">Cheque Date *</th>
+                  <th class="py-2 px-3">Cheque No. *</th>
+                  <th class="py-2 px-3">Monthly Rent (QAR) *</th>
+                  <th class="py-2 px-3">NOTE</th>
+                  <th class="py-2 px-3 text-center">Del</th>
+                </tr>
+              </thead>
+              <tbody id="builderTableBody" class="divide-y divide-slate-100"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center justify-between gap-3 pt-2 border-t">
+          <div id="builderFooterStats" class="text-xs font-bold text-slate-700">0 Cheques | QAR 0.00</div>
+          <div class="flex gap-2">
+            <button type="button" onclick="closeModal('modalAddCheques')" class="px-4 py-2 rounded-xl border text-xs font-bold text-slate-600">Cancel</button>
+            <button type="button" onclick="submitChequesToSheet()" id="btnSaveCheques" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold px-6 py-2.5 rounded-xl shadow">
+              Save to Google Sheet
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // নিচের লাইনে আপনার Google Apps Script Web App URL-টি বসান:
+    const SCRIPT_URL = "YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL";
+    // =========================================================================
+
+    let villas = [];
+    let allCheques = [];
+    let activeVillaTab = '';
+    let formRows = [];
+
+    function getDateOffsetStr(days = 0) {
+      const d = new Date();
+      d.setDate(d.getDate() + days);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    function formatQAR(num) {
+      return 'QAR ' + Number(num || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function computeStatusInfo(cheque) {
+      if (cheque.isDone) {
+        return { label: 'Done', isDueSoon: false, isDone: true };
+      }
+      const todayStr = getDateOffsetStr(0);
+      if (!cheque.chequeDate) return { label: 'Pending', isDueSoon: false, isDone: false };
+
+      const today = new Date(todayStr + 'T00:00:00');
+      const target = new Date(cheque.chequeDate + 'T00:00:00');
+      const diffDays = Math.round((target - today) / (1000 * 60 * 60 * 24));
+
+      if (diffDays < 0) {
+        return { label: 'Done', isDueSoon: false, isDone: true };
+      }
+      return {
+        label: `${diffDays} Days Left`,
+        isDueSoon: diffDays >= 0 && diffDays <= 7,
+        isDone: false
+      };
+    }
+
+    function bankTag(bank) {
+      const b = String(bank || '').toUpperCase();
+      if (b.includes('CBQ')) return `<span class="bg-purple-100 text-purple-800 font-extrabold px-2 py-0.5 rounded text-xs">CBQ</span>`;
+      if (b.includes('QNB')) return `<span class="bg-blue-100 text-blue-800 font-extrabold px-2 py-0.5 rounded text-xs">QNB</span>`;
+      if (b.includes('QIB')) return `<span class="bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded text-xs">QIB</span>`;
+      return `<span class="bg-slate-200 text-slate-800 font-extrabold px-2 py-0.5 rounded text-xs">${bank}</span>`;
+    }
+
+    // ==================== LOAD DATA FROM GOOGLE SHEET ====================
+    async function loadSheetData() {
+      if (SCRIPT_URL === "YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL") {
+        alert("দয়া করে HTML কোডের SCRIPT_URL এর জায়গায় আপনার Google Apps Script Web App URL বসান।");
+        return;
+      }
+      document.getElementById('syncBar').classList.remove('hidden');
+      try {
+        const res = await fetch(SCRIPT_URL);
+        const data = await res.json();
+        if (data.status === 'success') {
+          villas = data.villas || [];
+          allCheques = data.cheques || [];
+          document.getElementById('totalVillasBadge').innerText = villas.length;
+          if (!activeVillaTab && villas.length > 0) {
+            activeVillaTab = villas[0].tabName;
+          }
+          renderDashboard();
+          renderVillaSheetView();
+          renderSearchView();
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Google Sheet থেকে ডাটা লোড করা যায়নি। Deployment URL ও পারমিশন (Anyone) চেক করুন।");
+      } finally {
+        document.getElementById('syncBar').classList.add('hidden');
+      }
+    }
+
+    // ==================== RENDER DASHBOARD ====================
+    function renderDashboard() {
+      const today = getDateOffsetStr(0);
+      const tomorrow = getDateOffsetStr(1);
+      const day7 = getDateOffsetStr(7);
+
+      document.getElementById('kpiTodayDate').innerText = `Date: ${today}`;
+      document.getElementById('kpiTomorrowDate').innerText = `Date: ${tomorrow}`;
+
+      const pending = allCheques.filter(c => !computeStatusInfo(c).isDone);
+      const todayList = pending.filter(c => c.chequeDate === today);
+      const tomorrowList = pending.filter(c => c.chequeDate === tomorrow);
+      const next7List = pending.filter(c => c.chequeDate >= today && c.chequeDate <= day7);
+
+      const sum = arr => arr.reduce((s, x) => s + Number(x.amount || 0), 0);
+
+      document.getElementById('kpiTodayAmount').innerText = formatQAR(sum(todayList));
+      document.getElementById('kpiTomorrowAmount').innerText = formatQAR(sum(tomorrowList));
+      document.getElementById('kpi7DaysAmount').innerText = formatQAR(sum(next7List));
+      document.getElementById('kpi7DaysCount').innerText = `${next7List.length} Cheques (${today} to ${day7})`;
+
+      renderBankSummaryBox('kpiTodayBanks', todayList, 'আজ কোনো চেক নেই');
+      renderBankSummaryBox('kpiTomorrowBanks', tomorrowList, 'আগামীকাল কোনো চেক নেই');
+      renderBankSummaryBox('kpi7DaysBanks', next7List, 'আগামী ৭ দিনে কোনো চেক নেই');
+
+      next7List.sort((a, b) => a.chequeDate.localeCompare(b.chequeDate));
+      document.getElementById('upcomingCountPill').innerText = `${next7List.length} Cheques`;
+
+      const tbody = document.getElementById('dashboardUpcomingBody');
+      if (next7List.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="py-8 text-center text-slate-400">আগামী ৭ দিনের মধ্যে কোনো চেক নেই।</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = next7List.map(c => {
+        const st = computeStatusInfo(c);
+        return `
+          <tr class="${st.isDueSoon ? 'due-soon-row font-semibold' : 'hover:bg-slate-50'}">
+            <td class="py-3 px-4 font-bold text-blue-800">${c.sheetTab}</td>
+            <td class="py-3 px-4">${c.villaBuilding}</td>
+            <td class="py-3 px-4">${c.payee}</td>
+            <td class="py-3 px-4 text-center">${bankTag(c.bank)}</td>
+            <td class="py-3 px-4 text-center font-bold">${c.chequeDate}</td>
+            <td class="py-3 px-4 text-center font-mono font-bold">${c.chequeNo}</td>
+            <td class="py-3 px-4 text-right font-extrabold">${formatQAR(c.amount)}</td>
+            <td class="py-3 px-4 text-center font-bold text-slate-900">${st.label}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderBankSummaryBox(id, list, emptyMsg) {
+      const box = document.getElementById(id);
+      if (list.length === 0) {
+        box.innerHTML = `<p class="text-slate-400 italic">${emptyMsg}</p>`;
+        return;
+      }
+      const map = {};
+      list.forEach(c => {
+        const b = c.bank || 'Other';
+        if (!map[b]) map[b] = { total: 0, count: 0, nos: [] };
+        map[b].total += Number(c.amount || 0);
+        map[b].count += 1;
+        map[b].nos.push(c.chequeNo);
+      });
+
+      box.innerHTML = Object.entries(map).map(([bank, info]) => `
+        <div class="flex justify-between items-center bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
+          <div>${bankTag(bank)} <span class="text-slate-500 ml-1">(${info.count}টি: ${info.nos.join(', ')})</span></div>
+          <span class="font-extrabold text-slate-900">${formatQAR(info.total)}</span>
+        </div>
+      `).join('');
+    }
+
+    // ==================== RENDER INDIVIDUAL VILLA SHEET ====================
+    function renderVillaSheetView() {
+      const tabsBar = document.getElementById('villaTabsBar');
+      if (villas.length === 0) {
+        tabsBar.innerHTML = `<span class="text-xs text-slate-400">কোনো ভিলা ট্যাব পাওয়া যায়নি।</span>`;
+        return;
+      }
+
+      tabsBar.innerHTML = villas.map(v => {
+        const active = v.tabName === activeVillaTab;
+        return `
+          <button onclick="selectVillaTab('${v.tabName}')" class="px-4 py-2 rounded-xl text-xs font-extrabold transition whitespace-nowrap ${active ? 'bg-slate-900 text-white shadow' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">
+            <i class="fa-solid fa-file-excel mr-1.5 ${active ? 'text-emerald-400' : 'text-emerald-600'}"></i>${v.tabName}
+          </button>
+        `;
+      }).join('');
+
+      document.getElementById('sheetBannerVillaName').innerText = activeVillaTab;
+      document.getElementById('currentTabBtnLabel').innerText = activeVillaTab;
+
+      const rows = allCheques.filter(c => c.sheetTab === activeVillaTab);
+      const totalAmount = rows.reduce((s, x) => s + Number(x.amount || 0), 0);
+      const doneCount = rows.filter(x => computeStatusInfo(x).isDone).length;
+      const pendingCount = rows.length - doneCount;
+
+      const todayStr = getDateOffsetStr(0);
+      const upcomingDates = rows.filter(r => r.chequeDate >= todayStr && !computeStatusInfo(r).isDone).map(r => r.chequeDate).sort();
+      const nextDate = upcomingDates.length > 0 ? upcomingDates[0] : 'None';
+
+      document.getElementById('sheetSummaryNext').innerText = `Next: ${nextDate}`;
+      document.getElementById('sheetSummaryCount').innerText = `Total Cheques: ${rows.length}`;
+      document.getElementById('sheetSummaryTotal').innerText = formatQAR(totalAmount);
+      document.getElementById('sheetSummaryStatus').innerText = `Done: ${doneCount} | Pending: ${pendingCount}`;
+
+      const tbody = document.getElementById('villaSheetTableBody');
+      if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="10" class="py-10 text-center text-slate-400 text-xs">এই ভিলা শিটে এখনো কোনো চেক যোগ করা হয়নি।</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = rows.map((c, idx) => {
+        const st = computeStatusInfo(c);
+        return `
+          <tr class="${st.isDueSoon ? 'due-soon-row font-semibold' : 'hover:bg-slate-50'}">
+            <td class="py-2.5 px-3 text-center font-bold border-r border-slate-200">${idx + 1}</td>
+            <td class="py-2.5 px-3 border-r border-slate-200">${c.villaBuilding}</td>
+            <td class="py-2.5 px-3 border-r border-slate-200">${c.payee}</td>
+            <td class="py-2.5 px-3 text-center border-r border-slate-200">${bankTag(c.bank)}</td>
+            <td class="py-2.5 px-3 text-center font-semibold border-r border-slate-200">${c.chequeDate}</td>
+            <td class="py-2.5 px-3 text-center font-mono font-bold border-r border-slate-200">${c.chequeNo}</td>
+            <td class="py-2.5 px-3 text-right font-bold border-r border-slate-200">${formatQAR(c.amount)}</td>
+            <td class="py-2.5 px-3 text-center font-bold border-r border-slate-200 ${st.isDone ? 'text-emerald-700' : 'text-slate-900'}">${st.label}</td>
+            <td class="py-2.5 px-3 text-xs text-slate-600 border-r border-slate-200">${c.note || ''}</td>
+            <td class="py-2.5 px-3 text-center">
+              <div class="flex items-center justify-center gap-1.5">
+                ${!st.isDone ? `<button onclick="markChequeDone('${c.sheetTab}', ${c.rowIndex})" title="Mark Done" class="bg-emerald-600 text-white px-2 py-1 rounded text-[11px] font-bold">Done</button>` : ''}
+                <button onclick="deleteChequeRow('${c.sheetTab}', ${c.rowIndex})" title="Delete" class="text-rose-600 hover:text-rose-800 px-1.5 py-1"><i class="fa-solid fa-trash-can"></i></button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function selectVillaTab(tabName) {
+      activeVillaTab = tabName;
+      renderVillaSheetView();
+    }
+
+    // ==================== SEARCH VIEW ====================
+    function renderSearchView() {
+      const q = document.getElementById('searchText').value.toLowerCase().trim();
+      const dt = document.getElementById('searchDate').value;
+      const bk = document.getElementById('searchBank').value;
+
+      const filtered = allCheques.filter(c => {
+        const matchQ = !q ||
+          String(c.chequeNo).toLowerCase().includes(q) ||
+          String(c.payee).toLowerCase().includes(q) ||
+          String(c.villaBuilding).toLowerCase().includes(q) ||
+          String(c.sheetTab).toLowerCase().includes(q);
+        const matchDt = !dt || c.chequeDate === dt;
+        const matchBk = !bk || c.bank.toUpperCase() === bk.toUpperCase();
+        return matchQ && matchDt && matchBk;
+      });
+
+      document.getElementById('searchStatsText').innerText = `${filtered.length} cheques found`;
+      const tbody = document.getElementById('searchTableBody');
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="py-8 text-center text-slate-400">কোনো মিল পাওয়া যায়নি।</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(c => {
+        const st = computeStatusInfo(c);
+        return `
+          <tr class="${st.isDueSoon ? 'due-soon-row font-semibold' : 'hover:bg-slate-50'}">
+            <td class="py-3 px-4 font-mono font-extrabold text-slate-900">${c.chequeNo}</td>
+            <td class="py-3 px-4 font-bold">${c.chequeDate}</td>
+            <td class="py-3 px-4 font-bold text-blue-700">${c.sheetTab}</td>
+            <td class="py-3 px-4">${c.villaBuilding}</td>
+            <td class="py-3 px-4">${c.payee}</td>
+            <td class="py-3 px-4 text-center">${bankTag(c.bank)}</td>
+            <td class="py-3 px-4 text-right font-extrabold">${formatQAR(c.amount)}</td>
+            <td class="py-3 px-4 text-center font-bold">${st.label}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function resetSearch() {
+      document.getElementById('searchText').value = '';
+      document.getElementById('searchDate').value = '';
+      document.getElementById('searchBank').value = '';
+      renderSearchView();
+    }
+
+    // ==================== ADD CHEQUES BUILDER ====================
+    function openAddChequesModal(preselectTab = '') {
+      const sel = document.getElementById('formVillaTab');
+      if (villas.length === 0) {
+        openNewVillaModal();
+        return;
+      }
+      sel.innerHTML = villas.map(v => `<option value="${v.tabName}">${v.tabName}</option>`).join('');
+      if (preselectTab) sel.value = preselectTab;
+      onFormTabChange();
+
+      formRows = [
+        { bank: 'CBQ', chequeDate: '', chequeNo: '', amount: '', note: '' },
+        { bank: 'QNB', chequeDate: '', chequeNo: '', amount: '', note: '' },
+        { bank: 'QIB', chequeDate: '', chequeNo: '', amount: '', note: '' }
+      ];
+      renderFormRows();
+      document.getElementById('modalAddCheques').classList.remove('hidden');
+    }
+
+    function openAddChequesForCurrentTab() {
+      openAddChequesModal(activeVillaTab);
+    }
+
+    function onFormTabChange() {
+      const tab = document.getElementById('formVillaTab').value;
+      const vObj = villas.find(v => v.tabName === tab);
+      document.getElementById('formVillaBuilding').value = vObj && vObj.villaBuilding ? vObj.villaBuilding : tab;
+      document.getElementById('formPayeeName').value = vObj && vObj.payee ? vObj.payee : '';
+    }
+
+    function addNewFormRow() {
+      const last = formRows[formRows.length - 1];
+      formRows.push({
+        bank: last ? last.bank : 'CBQ',
+        chequeDate: '',
+        chequeNo: last && last.chequeNo ? String(Number(last.chequeNo) + 1).padStart(7, '0') : '',
+        amount: last ? last.amount : '',
+        note: ''
+      });
+      renderFormRows();
+    }
+
+    function removeFormRow(idx) {
+      formRows.splice(idx, 1);
+      renderFormRows();
+    }
+
+    function autoGenerateRows() {
+      const bank = document.getElementById('autoBank').value;
+      const startNo = Number(document.getElementById('autoStartNo').value);
+      const startDate = document.getElementById('autoStartDate').value;
+      const amount = Number(document.getElementById('autoAmount').value);
+      const count = Number(document.getElementById('autoCount').value);
+
+      if (!startNo || !startDate || !amount) {
+        alert("Start Cheque No, Start Date এবং Amount দিন।");
+        return;
+      }
+
+      const [y, m, d] = startDate.split('-').map(Number);
+      formRows = [];
+      for (let i = 0; i < count; i++) {
+        const dt = new Date(y, (m - 1) + i, d);
+        const dateStr = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+        formRows.push({
+          bank: bank,
+          chequeDate: dateStr,
+          chequeNo: String(startNo + i).padStart(7, '0'),
+          amount: amount,
+          note: ''
+        });
+      }
+      renderFormRows();
+    }
+
+    function renderFormRows() {
+      const banks = ['CBQ', 'QNB', 'QIB', 'Doha Bank', 'Masraf Al Rayan', 'Dukhan Bank'];
+      document.getElementById('builderTableBody').innerHTML = formRows.map((r, i) => `
+        <tr>
+          <td class="py-2 px-3 font-bold text-slate-400">${i + 1}</td>
+          <td class="py-2 px-3">
+            <select onchange="formRows[${i}].bank=this.value" class="border rounded-lg px-2 py-1.5 font-bold bg-white">
+              ${banks.map(b => `<option value="${b}" ${r.bank === b ? 'selected' : ''}>${b}</option>`).join('')}
+            </select>
+          </td>
+          <td class="py-2 px-3">
+            <input type="date" value="${r.chequeDate}" onchange="formRows[${i}].chequeDate=this.value" class="border rounded-lg px-2 py-1.5">
+          </td>
+          <td class="py-2 px-3">
+            <input type="text" value="${r.chequeNo}" oninput="formRows[${i}].chequeNo=this.value" placeholder="0000541" class="border rounded-lg px-2 py-1.5 w-28 font-mono">
+          </td>
+          <td class="py-2 px-3">
+            <input type="number" value="${r.amount}" oninput="formRows[${i}].amount=this.value; updateBuilderTotal()" placeholder="10000" class="border rounded-lg px-2 py-1.5 w-28 font-bold">
+          </td>
+          <td class="py-2 px-3">
+            <input type="text" value="${r.note}" oninput="formRows[${i}].note=this.value" placeholder="Note" class="border rounded-lg px-2 py-1.5 w-32">
+          </td>
+          <td class="py-2 px-3 text-center">
+            <button type="button" onclick="removeFormRow(${i})" class="text-rose-500 hover:text-rose-700"><i class="fa-solid fa-xmark"></i></button>
+          </td>
+        </tr>
+      `).join('');
+      updateBuilderTotal();
+    }
+
+    function updateBuilderTotal() {
+      const valid = formRows.filter(r => r.chequeDate && r.chequeNo && Number(r.amount) > 0);
+      const sum = valid.reduce((s, x) => s + Number(x.amount || 0), 0);
+      document.getElementById('builderFooterStats').innerText = `${valid.length} Cheques | ${formatQAR(sum)}`;
+    }
+
+    async function submitChequesToSheet() {
+      const tabName = document.getElementById('formVillaTab').value;
+      const villaBuilding = document.getElementById('formVillaBuilding').value.trim();
+      const payee = document.getElementById('formPayeeName').value.trim();
+
+      const valid = formRows
+        .filter(r => r.chequeDate && r.chequeNo && Number(r.amount) > 0)
+        .map(r => ({
+          villaBuilding,
+          payee,
+          bank: r.bank,
+          chequeDate: r.chequeDate,
+          chequeNo: r.chequeNo,
+          amount: Number(r.amount),
+          note: r.note
+        }));
+
+      if (!tabName || valid.length === 0) {
+        alert("অন্তত একটি চেকের তারিখ, চেক নম্বর ও টাকার অংক দিন।");
+        return;
+      }
+
+      const btn = document.getElementById('btnSaveCheques');
+      btn.disabled = true;
+      btn.innerText = "Saving...";
+
+      try {
+        await fetch(SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({ action: 'add_cheques', tabName, cheques: valid })
+        });
+        closeModal('modalAddCheques');
+        activeVillaTab = tabName;
+        await loadSheetData();
+      } catch (e) {
+        alert("সেভ করতে সমস্যা হয়েছে।");
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "Save to Google Sheet";
+      }
+    }
+
+    // ==================== VILLA TAB & ROW ACTIONS ====================
+    function openNewVillaModal() {
+      document.getElementById('modalNewVilla').classList.remove('hidden');
+    }
+
+    async function submitCreateVillaTab() {
+      const tabName = document.getElementById('inputNewTabName').value.trim().toUpperCase();
+      if (!tabName) {
+        alert("ভিলার নাম দিন (যেমন: VILLA-25)");
+        return;
+      }
+      const btn = document.getElementById('btnCreateTab');
+      btn.disabled = true;
+      btn.innerText = "Creating...";
+
+      try {
+        await fetch(SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({ action: 'create_villa_tab', tabName })
+        });
+        closeModal('modalNewVilla');
+        document.getElementById('inputNewTabName').value = '';
+        activeVillaTab = tabName;
+        await loadSheetData();
+      } catch (e) {
+        alert("ট্যাব তৈরি করতে সমস্যা হয়েছে।");
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "Create Villa Sheet Tab";
+      }
+    }
+
+    async function markChequeDone(tabName, rowIndex) {
+      document.getElementById('syncBar').classList.remove('hidden');
+      await fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'mark_done', tabName, rowIndex })
+      });
+      await loadSheetData();
+    }
+
+    async function deleteChequeRow(tabName, rowIndex) {
+      if (!confirm("আপনি কি নিশ্চিত এই চেক সারিটি ডিলিট করতে চান?")) return;
+      document.getElementById('syncBar').classList.remove('hidden');
+      await fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'delete_cheque', tabName, rowIndex })
+      });
+      await loadSheetData();
+    }
+
+    function switchMainView(view) {
+      ['dashboard', 'villas', 'search'].forEach(v => {
+        document.getElementById('view-' + v).classList.add('hidden');
+        document.getElementById('btn-view-' + v).classList.remove('tab-btn-active');
+      });
+      document.getElementById('view-' + view).classList.remove('hidden');
+      document.getElementById('btn-view-' + view).classList.add('tab-btn-active');
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.add('hidden');
+    }
+
+    window.onload = loadSheetData;
+  </script>
+</body>
+</html>
